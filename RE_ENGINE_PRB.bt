@@ -1,0 +1,74 @@
+//------------------------------------------------
+//--- 010 Editor v9.0.2 Binary Template
+//
+//      File: LPRB.bt
+//   Authors: battlezone
+//   Version: 0.1
+//   Purpose:
+//  Category: RE Engine
+// File Mask: *.prb.9
+//   History:
+//------------------------------------------------
+
+local int version = Atoi(SubStr(FileNameGetExtension(GetFileName()), 1));
+
+local int format9 = (version == 9);
+void align(int n) {
+    if (FTell()%n == 0) return;
+    FSkip(n - FTell()%n);
+}
+
+typedef struct FixedWString {
+    uint32 len;
+    if (len > 0) {
+        wchar_t str[len];
+    }
+    align(4);
+};
+uint totalProbes;
+FSeek(0);
+
+
+struct
+{
+    FSkip(4);
+    local uint pos=FTell();
+    local uint computedColor = ((ReadUInt(pos+8) << 24) |
+                                (ReadUInt(pos+4) << 16) |
+                                (ReadUInt(pos) << 8));
+    SetBackColor(computedColor);
+    uint ukn1;
+    uint ukn2;
+    uint ukn3;
+}ProbeInformation[totalProbes]<optimize=false>;
+
+FSkip(4);
+int size;
+struct
+{
+    int ukn3;
+    int ukn4;
+    int ukn4;
+    int ukn3;
+    int ukn4;
+    int ukn4;
+    int ukn4;
+    int ukn4;
+    float vec1_1[4];
+    float vec1_2[4];
+    float vec1_3[4];
+}samples[size];
+
+struct
+{
+    int maybePos;
+    float ukn4;
+    float ukn4;
+    float ukn4;
+}unknown_array[2];
+ushort arr_dimension1;
+ushort arr_dimension2;
+struct
+{
+    int something[arr_dimension2];
+}arr[arr_dimension1];

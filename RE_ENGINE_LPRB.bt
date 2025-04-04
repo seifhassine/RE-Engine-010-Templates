@@ -1,0 +1,96 @@
+//------------------------------------------------
+//--- 010 Editor v9.0.2 Binary Template
+//
+//      File: LPRB.bt
+//   Authors: battlezone
+//   Version: 0.1
+//   Purpose:
+//  Category: RE Engine
+// File Mask: *.lprb.6|*.lprb.8
+//  ID Bytes: 4E 50 52 42
+//   History:
+//------------------------------------------------
+
+local int version = Atoi(SubStr(FileNameGetExtension(GetFileName()), 1));
+
+local int format6 = (version == 6);
+local int format8 = (version == 8);
+void align(int n) {
+    if (FTell()%n == 0) return;
+    FSkip(n - FTell()%n);
+}
+
+typedef struct FixedWString {
+    uint32 len;
+    if (len > 0) {
+        wchar_t str[len];
+    }
+    align(4);
+};
+uint magic;
+uint totalProbes;
+uint unknownValue;
+if(format8)
+{
+    GUID guid;
+}
+else if(format6)
+{
+    uint Hash;
+}    
+
+
+align(16);
+local uint startpos = FTell();
+struct
+{
+    SetForeColor(0x008000);
+    uint RelativePosition;
+    //local int pos = FTell()+position;
+    //local uint computedColor = ((ReadUInt(pos+3) << 24) |
+    //                            (ReadUInt(pos+2) << 16) |
+    //                            (ReadUInt(pos+1) << 8)  |
+   //                             (ReadUInt(pos+0)));
+   // SetForeColor(computedColor);
+   // SetBackColor(computedColor);
+   local uint savePos = FTell();
+   FSeek(RelativePosition+startpos);
+   #define COLOR_SIZE 4
+    struct
+    {
+        struct
+        {
+            SetBackColor(0x008000);
+            if(format6) {
+                uint ukn[12];
+            }
+            else if(format8) {hfloat ukn[48];}
+        } ProbeAttributes <optimize=false>;    
+    } ProbeData<optimize=false>;
+   FSeek(savePos);
+       
+} Probes[totalProbes] <optimize=false, read=(Str("Absolute Position: %d ",RelativePosition+startpos))>;
+
+
+//local int posss = FTell();
+//local uint computedColor = 0;
+//while (FileSize() - FTell() >= 4)
+//{
+    //posss = FTell();
+    //computedColor = (((int)ReadUByte(posss+3) << 24) |
+    //                            ((int)ReadUByte(posss+2) << 16) |
+    //                            ((int)ReadUByte(posss+1) << 8)  |
+    //                            (int)ReadUByte(posss));
+    //SetBackColor(computedColor);
+//    struct
+    //{
+       //         hfloat x;
+     //           hfloat y;
+   //             hfloat x2;
+  //              hfloat y2;
+ //               hfloat x3;
+//                hfloat y3;
+//                hfloat x4;
+//                hfloat y4;
+//    } unknown;
+//}
