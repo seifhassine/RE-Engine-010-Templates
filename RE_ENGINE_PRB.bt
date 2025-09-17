@@ -3,72 +3,141 @@
 //
 //      File: LPRB.bt
 //   Authors: battlezone
-//   Version: 0.1
+//   Version: 0.2
 //   Purpose:
 //  Category: RE Engine
 // File Mask: *.prb.9
 //   History:
 //------------------------------------------------
 
-local int version = Atoi(SubStr(FileNameGetExtension(GetFileName()), 1));
 
-local int format9 = (version == 9);
-void align(int n) {
-    if (FTell()%n == 0) return;
-    FSkip(n - FTell()%n);
+// ---------- Common structs ----------
+
+typedef struct {
+    float  x, y, z;
+    uint32 pad;                   // stride 16B
+} Vec3fPadded <read=ReadVec3>;
+string ReadVec3(Vec3fPadded &v) {
+    string s; SPrintf(s, "(%.6g, %.6g, %.6g)", v.x, v.y, v.z); return s;
 }
 
-typedef struct FixedWString {
-    uint32 len;
-    if (len > 0) {
-        wchar_t str[len];
+typedef struct {
+    uint32 p[4];                  // probe indices
+    int32  nbr[4];                // tetra neighbors; nbr[i] across face opposite p[i], -1=boundary
+    struct { float x,y,z,w; } row[3]; // inverse-edge rows; .w packs v3.{x|y|z}
+} Tetra <read=ReadTetra, optimize=false>;
+string ReadTetra(Tetra &t) {
+    string s;
+    SPrintf(s, "p={%u,%u,%u,%u} nbr={%d,%d,%d,%d}",
+        t.p[0], t.p[1], t.p[2], t.p[3],
+        t.nbr[0], t.nbr[1], t.nbr[2], t.nbr[3]);
+    return s;
+}
+
+typedef struct { int32 tetId[gridNN]; } VoxelSlice <optimize=false, read=ReadVox32>;
+string ReadVox32(VoxelSlice &s) {
+    string o; SPrintf(o, "[TET %d,%d,%d,%d ...]",
+        s.tetId[0], s.tetId[1], s.tetId[2], s.tetId[3]); return o;
+}
+
+typedef struct { int32 seed[gridNN]; } ColumnSeeds <optimize=false, read=ReadSeeds32>;
+string ReadSeeds32(ColumnSeeds &s) {
+    string o; SPrintf(o, "[Seed %d,%d,%d,%d ...]", s.seed[0], s.seed[1], s.seed[2], s.seed[3]); return o;
+}
+
+uint32      ProbesNum;
+Vec3fPadded Probes[ProbesNum];
+
+uint32      TetrahedronNum;
+Tetra       Tetras[TetrahedronNum];
+
+// Remaining payload (to EOF) and header fields
+uint32 RemainingBytes;            // size of the entire remaining data (payload)
+local uint64 _payloadStart = FTell();
+local uint64 _payloadEnd   = _payloadStart + RemainingBytes;
+if ( (RemainingBytes & 0xF) != 0 )
+    Warning("RemainingBytes (%u) is not 16-byte aligned.", (uint64)RemainingBytes);
+
+local uint64 _actualRemaining = FileSize() - _payloadStart;
+if ( (_actualRemaining & 0xF) != 0 )
+    Warning("Actual remaining section size (%u) is not 16-byte aligned.", _actualRemaining);
+
+if ( _actualRemaining != RemainingBytes )
+    Warning("RemainingBytes (%u) != actual remaining bytes (%u).", (uint64)RemainingBytes, _actualRemaining);
+
+// 3 coordinates (vec0)
+float vec0_x; float vec0_y; float vec0_z;
+
+// packed total columns across Z and extras: colsTotal = gridNN * (gridN + K)
+uint32 ColsTotal;
+
+// 3 coordinates (vec1)
+float vec1_x; float vec1_y; float vec1_z;
+
+// Dense voxel index header
+uint16 gridNN;                    // columns per slice (= NX*NY)
+uint16 gridN;                     // number of Z slices (= NZ)
+
+
+// Voxels + Extras == ColsTotal / gridNN
+local int TotalCols = 0;
+local int VoxCount  = gridN;
+local int ExtrasCount = 0;
+if (gridNN != 0) {
+    TotalCols = (int)(ColsTotal / gridNN);
+    if (TotalCols > 0 && VoxCount > TotalCols) {
+        VoxCount = TotalCols;
     }
-    align(4);
-};
-uint totalProbes;
-FSeek(0);
+    ExtrasCount = (TotalCols > 0 ? (TotalCols - VoxCount) : 0);
+    if (ExtrasCount < 0) ExtrasCount = 0;
+}
+
+// ---------- Instantiate voxels ----------
+VoxelSlice Voxels[VoxCount];
+
+// Track bytes to the end of payload
+local uint64 _afterVox  = FTell();
+local uint64 _bytesLeft = 0;
+
+if (_afterVox > _payloadEnd) {
+    Warning("RemainingBytes underflow (payload end before voxels)");
+    FSeek(_payloadEnd);
+} else {
+    _bytesLeft = _payloadEnd - _afterVox;
+}
 
 
-struct
-{
-    FSkip(4);
-    local uint pos=FTell();
-    local uint computedColor = ((ReadUInt(pos+8) << 24) |
-                                (ReadUInt(pos+4) << 16) |
-                                (ReadUInt(pos) << 8));
-    SetBackColor(computedColor);
-    uint ukn1;
-    uint ukn2;
-    uint ukn3;
-}ProbeInformation[totalProbes]<optimize=false>;
+// ---------- Instantiate extras so Voxels+Extras == ColsTotal/gridNN ----------
+local uint64 needExtras = (uint64)gridNN * (uint64)ExtrasCount * 4;
+if (_bytesLeft < needExtras) {
+    Warning("Not enough bytes for extras (bytesLeft=%u, needExtras=%u)", _bytesLeft, needExtras);
+    FSeek(_payloadEnd);
+} else {
+    if (ExtrasCount > 0) { ColumnSeeds Extras[ExtrasCount]; }
 
-FSkip(4);
-int size;
-struct
-{
-    int ukn3;
-    int ukn4;
-    int ukn4;
-    int ukn3;
-    int ukn4;
-    int ukn4;
-    int ukn4;
-    int ukn4;
-    float vec1_1[4];
-    float vec1_2[4];
-    float vec1_3[4];
-}samples[size];
+    if (FTell() > _payloadEnd)
+        Warning("Parsed past payload end (FTell=%u, payloadEnd=%u).", FTell(), _payloadEnd);
 
-struct
-{
-    int maybePos;
-    float ukn4;
-    float ukn4;
-    float ukn4;
-}unknown_array[2];
-ushort arr_dimension1;
-ushort arr_dimension2;
-struct
-{
-    int something[arr_dimension2];
-}arr[arr_dimension1];
+    if (FTell() < _payloadEnd) {
+        local uint64 padLen = _payloadEnd - FTell();
+
+        if (padLen > 16)
+            Warning("Large padding size (%u) — still validating bytes.", padLen);
+        local uint64 i;
+        for (i = 0; i < padLen/4; ++i) {
+            int32 pad;
+            if (pad != 0xFFFFFFFF) {
+                Warning("Expected 0xFFFFFFFF padding at 0x%X, found 0x%08X.", (uint64)(FTell()-1), (uint64)b);
+            }
+        }
+    }
+    if (FTell() != _payloadEnd)
+        Warning("Did not end exactly at payload end (FTell=%u, payloadEnd=%u).", FTell(), _payloadEnd);
+
+    if (_payloadEnd != FileSize()) {
+        if (_payloadEnd < FileSize())
+            Warning("Unexpected trailing data after payload: %u bytes.", FileSize() - _payloadEnd);
+        else
+            Warning("File truncated: payload end (%u) beyond file size (%u).", _payloadEnd, FileSize());
+    }
+}
